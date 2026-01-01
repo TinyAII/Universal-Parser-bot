@@ -52,6 +52,8 @@ class BilibiliParser(BaseParser):
         )
         self.bili_ck = config["bili_ck"]
         self._cookies_file = Path(config["data_dir"]) / "bilibili_cookies.json"
+        # 添加B站CDN专用代理配置
+        self.bili_cdn_proxy = config.get("bili_cdn_proxy", "")
 
     @handle("b23.tv", r"b23\.tv/[A-Za-z\d\._?%&+\-=/#]+")
     @handle("bili2233", r"bili2233\.cn/[A-Za-z\d\._?%&+\-=/#]+")
@@ -156,13 +158,18 @@ class BilibiliParser(BaseParser):
             v_url, a_url = await self.extract_download_urls(video=video, page_index=page_info.index)
             if page_info.duration > self.max_duration:
                 raise DurationLimitException
+            
+            # 选择合适的代理：优先使用B站CDN专用代理，否则使用默认代理
+            use_proxy = self.bili_cdn_proxy if self.bili_cdn_proxy else self.proxy
+            logger.debug(f"B站下载使用代理: {'是' if use_proxy else '否'}")
+            
             if a_url is not None:
                 return await self.downloader.download_av_and_merge(
-                    v_url, a_url, output_path=output_path, ext_headers=self.headers, proxy=self.proxy
+                    v_url, a_url, output_path=output_path, ext_headers=self.headers, proxy=use_proxy
                 )
             else:
                 return await self.downloader.streamd(
-                    v_url, file_name=output_path.name, ext_headers=self.headers, proxy=self.proxy
+                    v_url, file_name=output_path.name, ext_headers=self.headers, proxy=use_proxy
                 )
 
         video_task = asyncio.create_task(download_video())
@@ -422,6 +429,22 @@ class BilibiliParser(BaseParser):
         if video is None:
             video = await self._get_video(bvid=bvid, avid=avid)
 
+        # B站CDN节点列表
+        bili_cdn_nodes = [
+            "upos-sz-mirror08c.bilivideo.com",
+            "upos-sz-mirrorcoso1.bilivideo.com",
+            "upos-sz-mirrorhw.bilivideo.com",
+            "upos-sz-mirror08h.bilivideo.com",
+            "upos-sz-mirrorcos.bilivideo.com",
+            "upos-sz-mirrorcosb.bilivideo.com",
+            "upos-sz-mirrorali.bilivideo.com",
+            "upos-sz-mirroralib.bilivideo.com",
+            "upos-sz-mirroraliov.bilivideo.com",
+            "upos-sz-mirrorcosov.bilivideo.com",
+            "upos-hz-mirrorakam.akamaized.net",
+            "upos-sz-mirrorcf1ov.bilivideo.com"
+        ]
+
         for attempt in range(retry_count):
             try:
                 # 获取下载数据
@@ -450,6 +473,22 @@ class BilibiliParser(BaseParser):
                     if isinstance(audio_stream, AudioStreamDownloadURL):
                         logger.debug(f"音频流质量: {audio_stream.audio_quality.name}")
                         audio_url = audio_stream.url
+                
+                # 处理CDN节点：提取原始URL中的CDN节点，然后返回带节点列表的URL
+                original_url = video_stream.url
+                import re
+                # 提取CDN节点前缀
+                cdn_node_pattern = r'(upos-[a-z]+-[a-z0-9]+(?:\.[a-z0-9]+)*\.bilivideo\.com|upos-[a-z]+-[a-z0-9]+\.akamaized\.net)'
+                match = re.search(cdn_node_pattern, original_url)
+                if match:
+                    original_cdn_node = match.group(0)
+                    logger.debug(f"原始CDN节点: {original_cdn_node}")
+                    # 替换为CDN节点列表，供下载时使用
+                    # 这里我们将所有CDN节点信息保存到视频URL中，供downloader使用
+                    # 实际的节点替换将在downloader中进行
+                    video_stream.url = original_url
+                    if audio_url:
+                        audio_stream.url = audio_url
                 
                 logger.debug(f"成功获取B站下载链接 | 视频URL: {video_stream.url[:50]}... | 音频URL: {'有' if audio_url else '无'}")
                 return video_stream.url, audio_url

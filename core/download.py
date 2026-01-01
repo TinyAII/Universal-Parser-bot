@@ -80,8 +80,8 @@ class Downloader:
         self.client = ClientSession(
             timeout=ClientTimeout(
                 total=config["download_timeout"],
-                connect=10,  # 连接超时设为10秒
-                sock_connect=10,  # socket连接超时设为10秒
+                connect=30,  # 连接超时设为30秒，增加B站CDN连接成功概率
+                sock_connect=30,  # socket连接超时设为30秒
                 sock_read=300  # socket读取超时设为300秒，适应大文件下载
             )
         )
@@ -93,7 +93,7 @@ class Downloader:
         file_name: str | None = None,
         ext_headers: dict[str, str] | None = None,
         proxy: str | None | object = ...,
-        retry_count: int = 3,
+        retry_count: int = 5,  # 增加重试次数到5次，提高B站CDN连接成功率
     ) -> Path:
         """download file by url with stream
 
@@ -124,8 +124,11 @@ class Downloader:
         if proxy is ...:
             proxy = self.proxy
         
-        # 针对B站CDN优化：如果是B站下载链接，尝试使用不同的代理或请求头策略
-        is_bili_cdn = "upos-sz-" in url or "upos-bvc" in url
+        # 针对B站CDN优化：如果是B站CDN链接，尝试使用不同的CDN节点
+        is_bili_cdn = "upos-" in url and "bilivideo.com" in url or "upos-hz-mirrorakam.akamaized.net" in url
+        available_nodes = []
+        cdn_node_pattern = r'(upos-[a-z]+-[a-z0-9]+(?:\.[a-z0-9]+)*\.bilivideo\.com|upos-[a-z]+-[a-z0-9]+\.akamaized\.net)'
+        
         if is_bili_cdn:
             # 为B站CDN添加额外的请求头
             headers["Origin"] = "https://www.bilibili.com"
@@ -133,18 +136,58 @@ class Downloader:
             headers["Sec-Fetch-Dest"] = "empty"
             headers["Sec-Fetch-Mode"] = "cors"
             headers["Sec-Fetch-Site"] = "cross-site"
+            
+            # B站CDN节点列表
+            bili_cdn_nodes = [
+                "upos-sz-mirror08c.bilivideo.com",
+                "upos-sz-mirrorcoso1.bilivideo.com",
+                "upos-sz-mirrorhw.bilivideo.com",
+                "upos-sz-mirror08h.bilivideo.com",
+                "upos-sz-mirrorcos.bilivideo.com",
+                "upos-sz-mirrorcosb.bilivideo.com",
+                "upos-sz-mirrorali.bilivideo.com",
+                "upos-sz-mirroralib.bilivideo.com",
+                "upos-sz-mirroraliov.bilivideo.com",
+                "upos-sz-mirrorcosov.bilivideo.com",
+                "upos-hz-mirrorakam.akamaized.net",
+                "upos-sz-mirrorcf1ov.bilivideo.com"
+            ]
+            
+            # 提取原始URL中的CDN节点
+            import re
+            match = re.search(cdn_node_pattern, url)
+            if match:
+                original_cdn_node = match.group(0)
+                logger.debug(f"原始CDN节点: {original_cdn_node}")
+                # 从节点列表中移除原始节点，避免重复尝试
+                available_nodes = [node for node in bili_cdn_nodes if node != original_cdn_node]
+                # 将原始节点放在列表末尾，最后尝试
+                available_nodes.append(original_cdn_node)
+            else:
+                available_nodes = bili_cdn_nodes
         
         for attempt in range(retry_count):
             try:
-                logger.debug(f"开始下载 | 尝试 {attempt + 1}/{retry_count} | url: {url}")
+                # 如果是B站CDN链接，并且还有可用节点，尝试替换CDN节点
+                current_url = url
+                use_node = None
+                if is_bili_cdn and available_nodes:
+                    # 计算当前尝试使用的节点索引
+                    node_index = attempt % len(available_nodes)
+                    use_node = available_nodes[node_index]
+                    # 替换URL中的CDN节点
+                    current_url = re.sub(cdn_node_pattern, use_node, url)
+                    logger.debug(f"尝试CDN节点 | 节点: {use_node} | 第 {node_index + 1}/{len(available_nodes)} 个节点")
+                
+                logger.debug(f"开始下载 | 尝试 {attempt + 1}/{retry_count} | url: {current_url[:100]}...")
                 async with self.client.get(
-                    url, headers=headers, allow_redirects=True, proxy=proxy
+                    current_url, headers=headers, allow_redirects=True, proxy=proxy
                 ) as response:
-                    logger.debug(f"下载响应 | 状态码: {response.status} | url: {url}")
+                    logger.debug(f"下载响应 | 状态码: {response.status} | url: {current_url[:100]}...")
                     if response.status >= 400:
                         # 针对B站特定错误码的处理
-                        if is_bili_cdn and response.status in [403, 404]:
-                            logger.warning(f"B站CDN返回错误 | 状态码: {response.status} | url: {url}")
+                        if is_bili_cdn and response.status in [403, 404, 500, 502, 503, 504]:
+                            logger.warning(f"B站CDN返回错误 | 状态码: {response.status} | 节点: {use_node} | url: {current_url[:100]}...")
                             # 尝试清除可能的缓存或使用不同的请求策略
                             await asyncio.sleep(1)
                             continue
