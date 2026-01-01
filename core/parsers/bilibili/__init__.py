@@ -38,6 +38,8 @@ class BilibiliParser(BaseParser):
     def __init__(self, config: AstrBotConfig, downloader: Downloader):
         super().__init__(config, downloader)
         self.headers = HEADERS.copy()
+        # 添加B站专用请求头，包含referer
+        self.headers["referer"] = "https://www.bilibili.com"
         self._credential: Credential | None = None
         self.max_duration = config["source_max_minute"] * 60
         self.cache_dir = Path(config["cache_dir"])
@@ -400,6 +402,7 @@ class BilibiliParser(BaseParser):
         bvid: str | None = None,
         avid: int | None = None,
         page_index: int = 0,
+        retry_count: int = 2,
     ) -> tuple[str, str | None]:
         """解析视频下载链接
 
@@ -407,6 +410,7 @@ class BilibiliParser(BaseParser):
             bvid (str | None): bvid
             avid (int | None): avid
             page_index (int): 页索引 = 页码 - 1
+            retry_count (int): 重试次数. Defaults to 2.
         """
 
         from bilibili_api.video import (
@@ -418,25 +422,46 @@ class BilibiliParser(BaseParser):
         if video is None:
             video = await self._get_video(bvid=bvid, avid=avid)
 
-        # 获取下载数据
-        download_url_data = await video.get_download_url(page_index=page_index)
-        detecter = VideoDownloadURLDataDetecter(download_url_data)
-        streams = detecter.detect_best_streams(
-            video_max_quality=self.video_quality,
-            codecs=[self.codecs],
-            no_dolby_video=True,
-            no_hdr=True,
-        )
-        video_stream = streams[0]
-        if not isinstance(video_stream, VideoStreamDownloadURL):
-            raise DownloadException("未找到可下载的视频流")
-        logger.debug(f"视频流质量: {video_stream.video_quality.name}, 编码: {video_stream.video_codecs}")
+        for attempt in range(retry_count):
+            try:
+                # 获取下载数据
+                download_url_data = await video.get_download_url(page_index=page_index)
+                detecter = VideoDownloadURLDataDetecter(download_url_data)
+                streams = detecter.detect_best_streams(
+                    video_max_quality=self.video_quality,
+                    codecs=[self.codecs],
+                    no_dolby_video=True,
+                    no_hdr=True,
+                )
+                
+                # 检查视频流
+                if not streams or len(streams) < 1:
+                    raise DownloadException("未找到可下载的媒体流")
+                    
+                video_stream = streams[0]
+                if not isinstance(video_stream, VideoStreamDownloadURL):
+                    raise DownloadException("未找到可下载的视频流")
+                logger.debug(f"视频流质量: {video_stream.video_quality.name}, 编码: {video_stream.video_codecs}")
 
-        audio_stream = streams[1]
-        if not isinstance(audio_stream, AudioStreamDownloadURL):
-            return video_stream.url, None
-        logger.debug(f"音频流质量: {audio_stream.audio_quality.name}")
-        return video_stream.url, audio_stream.url
+                # 检查音频流
+                audio_url = None
+                if len(streams) > 1:
+                    audio_stream = streams[1]
+                    if isinstance(audio_stream, AudioStreamDownloadURL):
+                        logger.debug(f"音频流质量: {audio_stream.audio_quality.name}")
+                        audio_url = audio_stream.url
+                
+                logger.debug(f"成功获取B站下载链接 | 视频URL: {video_stream.url[:50]}... | 音频URL: {'有' if audio_url else '无'}")
+                return video_stream.url, audio_url
+            except Exception as e:
+                logger.exception(f"获取B站下载链接失败 | 尝试 {attempt + 1}/{retry_count} | 错误: {str(e)}")
+                if attempt + 1 >= retry_count:
+                    raise DownloadException(f"获取B站下载链接失败: {str(e)}")
+                # 重试前等待一段时间
+                await asyncio.sleep(2 ** attempt)
+        
+        # 理论上不会到达这里，因为前面已经抛出异常
+        raise DownloadException("获取B站下载链接失败")
 
     def _save_credential(self):
         """存储哔哩哔哩登录凭证"""

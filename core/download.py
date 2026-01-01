@@ -76,8 +76,14 @@ class Downloader:
         # 视频信息缓存
         self.info_cache: LimitedSizeDict[str, VideoInfo] = LimitedSizeDict()
         # 用于流式下载的客户端
+        # 优化超时设置：将连接超时和下载超时分开
         self.client = ClientSession(
-            timeout=ClientTimeout(total=config["download_timeout"])
+            timeout=ClientTimeout(
+                total=config["download_timeout"],
+                connect=10,  # 连接超时设为10秒
+                sock_connect=10,  # socket连接超时设为10秒
+                sock_read=300  # socket读取超时设为300秒，适应大文件下载
+            )
         )
     @auto_task
     async def streamd(
@@ -117,13 +123,31 @@ class Downloader:
         # Use sentinel value to detect if proxy was explicitly passed
         if proxy is ...:
             proxy = self.proxy
-
+        
+        # 针对B站CDN优化：如果是B站下载链接，尝试使用不同的代理或请求头策略
+        is_bili_cdn = "upos-sz-" in url or "upos-bvc" in url
+        if is_bili_cdn:
+            # 为B站CDN添加额外的请求头
+            headers["Origin"] = "https://www.bilibili.com"
+            headers["Referer"] = "https://www.bilibili.com/"
+            headers["Sec-Fetch-Dest"] = "empty"
+            headers["Sec-Fetch-Mode"] = "cors"
+            headers["Sec-Fetch-Site"] = "cross-site"
+        
         for attempt in range(retry_count):
             try:
+                logger.debug(f"开始下载 | 尝试 {attempt + 1}/{retry_count} | url: {url}")
                 async with self.client.get(
                     url, headers=headers, allow_redirects=True, proxy=proxy
                 ) as response:
+                    logger.debug(f"下载响应 | 状态码: {response.status} | url: {url}")
                     if response.status >= 400:
+                        # 针对B站特定错误码的处理
+                        if is_bili_cdn and response.status in [403, 404]:
+                            logger.warning(f"B站CDN返回错误 | 状态码: {response.status} | url: {url}")
+                            # 尝试清除可能的缓存或使用不同的请求策略
+                            await asyncio.sleep(1)
+                            continue
                         raise ClientError(
                             f"HTTP {response.status} {response.reason}"
                         )
@@ -139,20 +163,31 @@ class Downloader:
                         )
                         raise SizeLimitException
 
+                    logger.debug(f"开始流式下载 | 文件大小: {content_length} 字节 | url: {url}")
                     with self.get_progress_bar(file_name, content_length) as bar:
                         async with aiofiles.open(file_path, "wb") as file:
                             async for chunk in response.content.iter_chunked(1024 * 1024):
                                 await file.write(chunk)
                                 bar.update(len(chunk))
+                    logger.debug(f"下载完成 | 文件路径: {file_path} | url: {url}")
                     return file_path
 
             except ClientError as e:
                 await safe_unlink(file_path)
                 logger.exception(f"下载失败 | 尝试 {attempt + 1}/{retry_count} | url: {url}, file_path: {file_path}")
+                # 针对B站CDN的特殊处理
+                if is_bili_cdn:
+                    logger.warning(f"B站CDN连接失败，尝试重试... | 错误: {str(e)}")
+                    # 为B站CDN增加额外的重试间隔
+                    await asyncio.sleep(3 ** attempt)
+                else:
+                    # 其他情况使用指数退避
+                    await asyncio.sleep(2 ** attempt)
                 if attempt + 1 >= retry_count:
-                    raise DownloadException(f"媒体下载失败: {str(e)}")
-                # 重试前等待一段时间，指数退避
-                await asyncio.sleep(2 ** attempt)
+                    if is_bili_cdn:
+                        raise DownloadException(f"B站媒体下载失败: {str(e)}。可能是CDN节点问题或网络限制")
+                    else:
+                        raise DownloadException(f"媒体下载失败: {str(e)}")
         return file_path
 
     @staticmethod
