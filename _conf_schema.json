@@ -1,0 +1,209 @@
+{
+    "disabled_sessions": {
+        "description": "关闭解析的会话",
+        "hint": "在会话中使用命令 “开启解析” 和 “关闭解析” 来设置某会话的解析状态",
+        "type": "list",
+        "default": []
+    },
+    "enable_platforms": {
+        "description": "启用解析的平台",
+        "hint": "打勾表示启用该平台的解析器。请 PR 者写好解析器后务必在这里加上平台名，作为总开关",
+        "type": "list",
+        "options": [
+            "A站",
+            "B站",
+            "微博",
+            "小红书",
+            "抖音",
+            "快手",
+            "NGA",
+            "TikTok",
+            "推特",
+            "油管",
+            "网易云"
+        ],
+        "default": [
+            "A站",
+            "B站",
+            "微博",
+            "小红书",
+            "抖音",
+            "快手",
+            "NGA",
+            "TikTok",
+            "推特",
+            "油管"
+        ]
+    },
+    "arbiter": {
+        "description": "仲裁机制",
+        "hint": "仲裁机制：一个确保群内只有一个 Bot 对链接进行解析的机制，利用 QQ 贴表情来实现。注意：此开关无效，所有插件使用者强制启用仲裁机制，以确保所有 Bot 遵循本插件的仲裁协议",
+        "type": "bool",
+        "default": true
+    },
+    "debounce_interval": {
+        "description": "防抖秒数",
+        "hint": "防抖机制：同一个会话下，防抖时间内不解析那些已经解析过的链接。设为 0 表示不启用防抖机制",
+        "type": "int",
+        "slider": {
+            "min": 0,
+            "max": 600,
+            "step": 10
+        },
+        "default": 300
+    },
+    "source_max_size": {
+        "description": "资源最大大小",
+        "hint": "允许下载的音视频最大体积，单位 MB",
+        "type": "int",
+        "slider": {
+            "min": 10,
+            "max": 500,
+            "step": 10
+        },
+        "default": 90
+    },
+    "source_max_minute": {
+        "description": "资源最大时长（分钟）",
+        "hint": "允许下载的音视频最大时长，超过则不解析",
+        "type": "int",
+        "slider": {
+            "min": 1,
+            "max": 60,
+            "step": 1
+        },
+        "default": 15
+    },
+    "audio_to_file": {
+        "description": "音频以文件形式上传",
+        "hint": "是否将解析到的音频文件用文件形式上传，而不是语音形式",
+        "type": "bool",
+        "default": true
+    },
+    "single_heavy_render_card": {
+        "description": "单条重媒体仍渲染卡片",
+        "hint": "重媒体是指：视频、音频、文件。重媒体下载和发送较为耗时，有需者可以打开此开关让插件先渲染一个信息卡片发出来，追求简洁者请不要开启",
+        "type": "bool",
+        "default": false
+    },
+    "forward_threshold": {
+        "description": "转发阈值",
+        "hint": "硬性要求：解析生成的消息条数达到此阈值时，将消息合并转发",
+        "type": "int",
+        "slider": {
+            "min": 0,
+            "max": 10,
+            "step": 1
+        },
+        "default": 2
+    },
+    "download_timeout": {
+        "description": "下载请求超时秒数",
+        "hint": "下载视频、音频等较大文件时的请求超时时间，单位秒。 建议设置大一点，视频、音频较大时下载耗时较长",
+        "type": "int",
+        "slider": {
+            "min": 10,
+            "max": 600,
+            "step": 10
+        },
+        "default": 280
+    },
+    "common_timeout": {
+        "description": "普通请求超时时间",
+        "hint": "普通请求超时时间，单位秒。用于一些普通的请求 ",
+        "type": "int",
+        "slider": {
+            "min": 5,
+            "max": 60,
+            "step": 1
+        },
+        "default": 15
+    },
+    "bili_ck": {
+        "description": "Bilibili Cookies",
+        "hint": "用于B站解析的登录Cookies，留空则使用无登录状态",
+        "type": "text",
+        "default": ""
+    },
+    "bili_video_codecs": {
+        "description": "B站视频编码",
+        "hint": "优先下载的编码类型，可选：AVC、AV1、HEV",
+        "type": "string",
+        "options": [
+            "AVC",
+            "AV1",
+            "HEV"
+        ],
+        "default": "AVC"
+    },
+    "bili_video_quality": {
+        "description": "B站视频分辨率",
+        "hint": "下载B站视频的分辨率",
+        "type": "string",
+        "options": [
+            "_360P",
+            "_480P",
+            "_720P",
+            "_1080P",
+            "_1080P_PLUS",
+            "_1080P_60",
+            "_4K",
+            "HDR",
+            "DOLBY",
+            "_8K",
+            "AI_REPAIR"
+        ],
+        "default": "_720P"
+    },
+    "ytb_ck": {
+        "description": "YouTube Cookies",
+        "hint": "用于YouTube解析的登录Cookies，留空则使用无登录状态",
+        "type": "text",
+        "default": ""
+    },
+    "proxy": {
+        "description": "代理地址",
+        "hint": "如 http://127.0.0.1:7890，留空则直连。仅作用于 youtube, tiktok 解析",
+        "type": "string",
+        "default": ""
+    },
+    "emoji_cdn": {
+        "description": "Pilmoji 表情 CDN",
+        "hint": "渲染表情使用的 CDN 地址，一般无需修改",
+        "type": "string",
+        "default": "https://cdn.jsdelivr.net/npm/emoji-datasource-facebook@14.0.0/img/facebook/64/"
+    },
+    "emoji_style": {
+        "description": "Pilmoji 表情样式",
+        "hint": "可选：APPLE、FACEBOOK、GOOGLE、TWITTER",
+        "type": "string",
+        "options": [
+            "APPLE",
+            "FACEBOOK",
+            "GOOGLE",
+            "TWITTER"
+        ],
+        "default": "FACEBOOK"
+    },
+    "clean_cron": {
+        "description": "自动清理缓存的触发周期",
+        "hint": "使用 Cron 表达式（分 时 日 月 周）定义。例如：“30 2 * * *” 表示每天 2:30 。留空表示禁用自动清理",
+        "type": "string",
+        "default": "30 2 * * *"
+    },
+    "data_dir": {
+        "description": "数据目录",
+        "type": "string",
+        "invisible": true
+    },
+    "cache_dir": {
+        "description": "缓存目录",
+        "type": "string",
+        "invisible": true
+    },
+    "ytb_cookies_file": {
+        "description": "YouTube Cookies 文件",
+        "type": "string",
+        "invisible": true
+    }
+}
