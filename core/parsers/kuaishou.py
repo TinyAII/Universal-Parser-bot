@@ -39,19 +39,41 @@ class KuaiShouParser(BaseParser):
     async def _parse_v_kuaishou(self, searched: re.Match[str]):
         # 从匹配对象中获取原始URL
         url = f"https://{searched.group(0)}"
-        real_url = await self.get_redirect_url(url, headers=self.ios_headers)
-
+        
+        # 增加页面获取的重试机制
+        max_retries = 3
+        real_url = ""
+        for attempt in range(max_retries):
+            try:
+                real_url = await self.get_redirect_url(url, headers=self.ios_headers)
+                if len(real_url) > 0:
+                    break
+            except Exception as e:
+                logger.warning(f"获取真实URL失败，尝试重试... | 尝试 {attempt+1}/{max_retries} | 错误: {str(e)}")
+                await asyncio.sleep(1)
+        
         if len(real_url) <= 0:
-            raise ParseException("failed to get location url from url")
+            raise ParseException("failed to get location url from url after multiple retries")
 
         # /fw/long-video/ 返回结果不一样, 统一替换为 /fw/photo/ 请求
         real_url = real_url.replace("/fw/long-video/", "/fw/photo/")
-
-        async with self.client.get(real_url, headers=self.ios_headers) as resp:
-
-            if resp.status >= 400:
-                raise ParseException(f"获取页面失败 {resp.status}")
-            response_text = await resp.text()
+        
+        # 增加页面内容获取的重试机制
+        response_text = ""
+        for attempt in range(max_retries):
+            try:
+                async with self.client.get(real_url, headers=self.ios_headers, timeout=30) as resp:
+                    if resp.status >= 400:
+                        raise ParseException(f"获取页面失败 {resp.status}")
+                    response_text = await resp.text()
+                if response_text:
+                    break
+            except Exception as e:
+                logger.warning(f"获取页面内容失败，尝试重试... | 尝试 {attempt+1}/{max_retries} | 错误: {str(e)}")
+                await asyncio.sleep(1)
+        
+        if not response_text:
+            raise ParseException("failed to get page content after multiple retries")
 
         pattern = r"window\.INIT_STATE\s*=\s*(.*?)</script>"
         matched = re.search(pattern, response_text)
