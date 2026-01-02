@@ -17,6 +17,14 @@ class KuaiShouParser(BaseParser):
 
     # 平台信息
     platform: ClassVar[Platform] = Platform(name="kuaishou", display_name="快手")
+    
+    # 固定CDN节点列表
+    KUAISHOU_CDN_NODES = [
+        "corp.kuaishou.com",
+        "creator.kuaishou.com",
+        "e.kuaishou.com",
+        "m.kuaishou.com"
+    ]
 
     def __init__(self, config: AstrBotConfig, downloader: Downloader):
         super().__init__(config, downloader)
@@ -122,15 +130,32 @@ class Photo(Struct):
 
     @property
     def cover_url(self):
-        return choice(self.cover_urls).url if len(self.cover_urls) != 0 else None
+        """返回所有可用的封面URL列表，而非单个随机URL"""
+        return [cdn_url.url for cdn_url in self.cover_urls if cdn_url.url]
 
     @property
     def video_url(self):
-        return choice(self.main_mv_urls).url if len(self.main_mv_urls) != 0 else None
+        """返回所有可用的视频URL列表，而非单个随机URL"""
+        return [cdn_url.url for cdn_url in self.main_mv_urls if cdn_url.url]
 
     @property
     def img_urls(self):
-        return self.ext_params.atlas.img_urls
+        """返回所有可用的图片URL列表，使用固定CDN节点"""
+        atlas = self.ext_params.atlas
+        if not atlas.img_route_list:
+            return []
+        
+        # 使用固定的CDN节点列表
+        from . import KuaiShouParser
+        
+        # 为每个图片路径生成所有CDN节点的URL
+        all_img_urls = []
+        for img_route in atlas.img_route_list:
+            for cdn_node in KuaiShouParser.KUAISHOU_CDN_NODES:
+                img_url = f"https://{cdn_node}/{img_route}"
+                all_img_urls.append(img_url)
+        
+        return all_img_urls
 
 
 class TusjohData(Struct):

@@ -88,7 +88,7 @@ class Downloader:
     @auto_task
     async def streamd(
         self,
-        url: str,
+        url: str | list[str],
         *,
         file_name: str | None = None,
         ext_headers: dict[str, str] | None = None,
@@ -98,7 +98,7 @@ class Downloader:
         """download file by url with stream
 
         Args:
-            url (str): url address
+            url (str | list[str]): url address or list of fallback urls
             file_name (str | None): file name. Defaults to generate_file_name.
             ext_headers (dict[str, str] | None): ext headers. Defaults to None.
             proxy (str | None): proxy URL. Defaults to configured proxy. Use None to disable proxy.
@@ -110,6 +110,22 @@ class Downloader:
         Raises:
             httpx.HTTPError: When download fails
         """
+        # 如果是URL列表，依次尝试每个URL
+        if isinstance(url, list):
+            for i, single_url in enumerate(url):
+                try:
+                    return await self.streamd(
+                        single_url,
+                        file_name=file_name,
+                        ext_headers=ext_headers,
+                        proxy=proxy,
+                        retry_count=1  # 单个URL只重试1次，失败则尝试下一个
+                    )
+                except Exception as e:
+                    logger.warning(f"URL {single_url} 下载失败，尝试下一个... | 尝试 {i+1}/{len(url)} | 错误: {str(e)}")
+            # 所有URL都失败
+            raise DownloadException("所有URL都下载失败")
+        
 
         if not file_name:
             file_name = generate_file_name(url)
@@ -257,7 +273,7 @@ class Downloader:
     @auto_task
     async def download_video(
         self,
-        url: str,
+        url: str | list[str],
         *,
         video_name: str | None = None,
         ext_headers: dict[str, str] | None = None,
@@ -268,7 +284,7 @@ class Downloader:
         """download video file by url with stream
 
         Args:
-            url (str): url address
+            url (str | list[str]): url address or list of fallback urls
             video_name (str | None): video name. Defaults to get name by parse url.
             ext_headers (dict[str, str] | None): ext headers. Defaults to None.
             use_ytdlp (bool): use ytdlp to download video. Defaults to False.
@@ -282,16 +298,23 @@ class Downloader:
             httpx.HTTPError: When download fails
         """
         if use_ytdlp:
+            # ytdlp只支持单个URL
+            if isinstance(url, list):
+                url = url[0]
             return await self._ytdlp_download_video(url, cookiefile)
 
+        # 生成文件名，只使用第一个URL
         if video_name is None:
-            video_name = generate_file_name(url, ".mp4")
+            if isinstance(url, list):
+                video_name = generate_file_name(url[0], ".mp4")
+            else:
+                video_name = generate_file_name(url, ".mp4")
         return await self.streamd(url, file_name=video_name, ext_headers=ext_headers, proxy=proxy)
 
     @auto_task
     async def download_audio(
         self,
-        url: str,
+        url: str | list[str],
         *,
         audio_name: str | None = None,
         ext_headers: dict[str, str] | None = None,
@@ -302,7 +325,7 @@ class Downloader:
         """download audio file by url with stream
 
         Args:
-            url (str): url address
+            url (str | list[str]): url address or list of fallback urls
             audio_name (str | None ): audio name. Defaults to generate from url.
             ext_headers (dict[str, str] | None): ext headers. Defaults to None.
             proxy (str | None): proxy URL. Defaults to configured proxy. Use None to disable proxy.
@@ -314,16 +337,23 @@ class Downloader:
             httpx.HTTPError: When download fails
         """
         if use_ytdlp:
+            # ytdlp只支持单个URL
+            if isinstance(url, list):
+                url = url[0]
             return await self._ytdlp_download_audio(url, cookiefile)
 
+        # 生成文件名，只使用第一个URL
         if audio_name is None:
-            audio_name = generate_file_name(url, ".mp3")
+            if isinstance(url, list):
+                audio_name = generate_file_name(url[0], ".mp3")
+            else:
+                audio_name = generate_file_name(url, ".mp3")
         return await self.streamd(url, file_name=audio_name, ext_headers=ext_headers, proxy=proxy)
 
     @auto_task
     async def download_file(
         self,
-        url: str,
+        url: str | list[str],
         *,
         file_name: str | None = None,
         ext_headers: dict[str, str] | None = None,
@@ -332,7 +362,7 @@ class Downloader:
         """download file by url with stream
         
         Args:
-            url (str): url address
+            url (str | list[str]): url address or list of fallback urls
             file_name (str | None): file name. Defaults to None.
             ext_headers (dict[str, str] | None): ext headers. Defaults to None.
             proxy (str | None): proxy URL. Defaults to configured proxy. Use None to disable proxy.
@@ -340,14 +370,18 @@ class Downloader:
         Returns:
             Path: file path
         """
+        # 生成文件名，只使用第一个URL
         if file_name is None:
-            file_name = generate_file_name(url, ".zip")
+            if isinstance(url, list):
+                file_name = generate_file_name(url[0], ".zip")
+            else:
+                file_name = generate_file_name(url, ".zip")
         return await self.streamd(url, file_name=file_name, ext_headers=ext_headers, proxy=proxy)
 
     @auto_task
     async def download_img(
         self,
-        url: str,
+        url: str | list[str],
         *,
         img_name: str | None = None,
         ext_headers: dict[str, str] | None = None,
@@ -356,7 +390,7 @@ class Downloader:
         """download image file by url with stream
 
         Args:
-            url (str): url
+            url (str | list[str]): url or list of fallback urls
             img_name (str | None): image name. Defaults to generate from url.
             ext_headers (dict[str, str] | None): ext headers. Defaults to None.
             proxy (str | None): proxy URL. Defaults to configured proxy. Use None to disable proxy.
@@ -367,8 +401,12 @@ class Downloader:
         Raises:
             httpx.HTTPError: When download fails
         """
+        # 生成文件名，只使用第一个URL
         if img_name is None:
-            img_name = generate_file_name(url, ".jpg")
+            if isinstance(url, list):
+                img_name = generate_file_name(url[0], ".jpg")
+            else:
+                img_name = generate_file_name(url, ".jpg")
         return await self.streamd(url, file_name=img_name, ext_headers=ext_headers, proxy=proxy)
 
     async def download_imgs_without_raise(
