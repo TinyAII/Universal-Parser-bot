@@ -60,22 +60,54 @@ class KuaiShouParser(BaseParser):
         # /fw/long-video/ 返回结果不一样, 统一替换为 /fw/photo/ 请求
         real_url = real_url.replace("/fw/long-video/", "/fw/photo/")
         
-        # 增加页面内容获取的重试机制
+        # 从URL中提取路径部分
+        from urllib.parse import urlparse
+        parsed_url = urlparse(real_url)
+        path = parsed_url.path
+        if parsed_url.query:
+            path += f"?{parsed_url.query}"
+        
+        # 增加页面内容获取的重试机制，结合CDN节点轮换
         response_text = ""
-        for attempt in range(max_retries):
+        # 先尝试所有CDN节点，每个节点尝试1次
+        for cdn_node in self.KUAISHOU_CDN_NODES:
             try:
-                async with self.client.get(real_url, headers=self.ios_headers, timeout=30) as resp:
+                cdn_url = f"https://{cdn_node}{path}"
+                logger.info(f"尝试使用CDN节点: {cdn_node} | URL: {cdn_url}")
+                async with self.client.get(cdn_url, headers=self.ios_headers, timeout=30) as resp:
                     if resp.status >= 400:
-                        raise ParseException(f"获取页面失败 {resp.status}")
+                        logger.warning(f"CDN节点 {cdn_node} 返回错误状态: {resp.status}")
+                        continue
                     response_text = await resp.text()
                 if response_text:
+                    logger.info(f"成功使用CDN节点获取页面内容: {cdn_node}")
                     break
             except Exception as e:
-                logger.warning(f"获取页面内容失败，尝试重试... | 尝试 {attempt+1}/{max_retries} | 错误: {str(e)}")
+                logger.warning(f"CDN节点 {cdn_node} 请求失败 | 错误: {str(e)}")
                 await asyncio.sleep(1)
         
+        # 如果所有CDN节点都失败，进行整体重试
         if not response_text:
-            raise ParseException("failed to get page content after multiple retries")
+            for attempt in range(1, max_retries):
+                try:
+                    logger.info(f"所有CDN节点尝试失败，进行第 {attempt+1}/{max_retries} 次整体重试")
+                    # 随机选择一个CDN节点进行重试
+                    cdn_node = choice(self.KUAISHOU_CDN_NODES)
+                    cdn_url = f"https://{cdn_node}{path}"
+                    async with self.client.get(cdn_url, headers=self.ios_headers, timeout=30) as resp:
+                        if resp.status >= 400:
+                            logger.warning(f"重试时CDN节点 {cdn_node} 返回错误状态: {resp.status}")
+                            continue
+                        response_text = await resp.text()
+                    if response_text:
+                        logger.info(f"重试成功，使用CDN节点: {cdn_node}")
+                        break
+                except Exception as e:
+                    logger.warning(f"重试失败 | 尝试 {attempt+1}/{max_retries} | 错误: {str(e)}")
+                    await asyncio.sleep(1)
+        
+        if not response_text:
+            raise ParseException(f"failed to get page content after multiple retries with all CDN nodes")
 
         pattern = r"window\.INIT_STATE\s*=\s*(.*?)</script>"
         matched = re.search(pattern, response_text)
