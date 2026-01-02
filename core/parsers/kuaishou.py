@@ -5,6 +5,7 @@ from typing import ClassVar, TypeAlias
 import msgspec
 from msgspec import Struct, field
 
+from astrbot.api import logger
 from astrbot.core.config.astrbot_config import AstrBotConfig
 
 from ..data import Platform
