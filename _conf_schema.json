@@ -20,7 +20,8 @@
             "TikTok",
             "推特",
             "油管",
-            "网易云"
+            "网易云",
+            "短视频"
         ],
         "default": [
             "A站",
@@ -164,6 +165,11 @@
     "proxy": {
         "description": "代理地址",
         "hint": "如 http://127.0.0.1:7890，留空则直连。仅作用于 youtube, tiktok 解析",
+        "type": "string",
+        "default": ""},
+    "bili_cdn_proxy": {
+        "description": "B站CDN专用代理",
+        "hint": "如 http://127.0.0.1:7890，留空则使用默认代理或直连。专门用于B站CDN下载，解决B站CDN连接超时问题",
         "type": "string",
         "default": ""
     },

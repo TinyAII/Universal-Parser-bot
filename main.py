@@ -335,7 +335,32 @@ class ParserPlugin(Star):
             return
 
         # 解析
-        parse_res = await self.parser_map[keyword].parse(keyword, searched)
+        try:
+            # 首先尝试使用原来的解析器
+            parse_res = await self.parser_map[keyword].parse(keyword, searched)
+            logger.debug(f"使用原生解析器成功解析: {keyword}")
+        except Exception as e:
+            logger.warning(f"原生解析器失败: {type(e).__name__}: {str(e)}")
+            # 尝试使用ShortVideoParser作为备选
+            try:
+                logger.info("尝试使用第三方API解析器...")
+                # 从parser_map中获取ShortVideoParser实例
+                shortvideo_parser = None
+                for parser in self.parser_map.values():
+                    from .core.parsers.shortvideo import ShortVideoParser
+                    if isinstance(parser, ShortVideoParser):
+                        shortvideo_parser = parser
+                        break
+                
+                if shortvideo_parser:
+                    parse_res = await shortvideo_parser._parse_short_video(searched)
+                    logger.info("使用第三方API解析器成功解析")
+                else:
+                    logger.error("未找到ShortVideoParser实例，无法使用第三方API解析")
+                    raise e
+            except Exception as backup_e:
+                logger.error(f"第三方API解析器也失败: {type(backup_e).__name__}: {str(backup_e)}")
+                raise e
 
         # 发送
         await self._send_parse_result(event, parse_res)
