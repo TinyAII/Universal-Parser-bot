@@ -21,6 +21,9 @@ class ShortVideoParser(BaseParser):
     # 平台信息
     platform: ClassVar[Platform] = Platform(name="shortvideo", display_name="短视频")
     
+    # 标记为备用解析器，不需要在配置中启用
+    is_backup_parser = True
+    
     def __init__(self, config: AstrBotConfig, downloader: Downloader):
         super().__init__(config, downloader)
         # 第三方API配置

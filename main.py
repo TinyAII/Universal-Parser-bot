@@ -117,6 +117,9 @@ class ParserPlugin(Star):
         unique_parsers = set(self.parser_map.values())
         for parser in unique_parsers:
             await parser.close_session()
+        # 关闭ShortVideoParser的会话
+        if hasattr(self, 'shortvideo_parser'):
+            await self.shortvideo_parser.close_session()
         # 关缓存清理器
         await self.cleaner.stop()
 
@@ -150,6 +153,11 @@ class ParserPlugin(Star):
         keywords = [kw for kw, _ in patterns]
         logger.debug(f"关键词-正则对已生成：{keywords}")
         self.key_pattern_list = patterns
+        
+        # 单独创建ShortVideoParser实例，用于作为备选解析器
+        from .core.parsers.shortvideo import ShortVideoParser
+        self.shortvideo_parser = ShortVideoParser(self.config, self.downloader)
+        logger.info("已创建ShortVideoParser实例，用于作为备选解析器")
 
     def _get_parser_by_type(self, parser_type):
         for parser in self.parser_map.values():
@@ -344,19 +352,12 @@ class ParserPlugin(Star):
             # 尝试使用ShortVideoParser作为备选
             try:
                 logger.info("尝试使用第三方API解析器...")
-                # 从parser_map中获取ShortVideoParser实例
-                shortvideo_parser = None
-                for parser in self.parser_map.values():
-                    from .core.parsers.shortvideo import ShortVideoParser
-                    if isinstance(parser, ShortVideoParser):
-                        shortvideo_parser = parser
-                        break
-                
-                if shortvideo_parser:
-                    parse_res = await shortvideo_parser._parse_short_video(searched)
+                # 使用预先创建的ShortVideoParser实例
+                if hasattr(self, 'shortvideo_parser'):
+                    parse_res = await self.shortvideo_parser._parse_short_video(searched)
                     logger.info("使用第三方API解析器成功解析")
                 else:
-                    logger.error("未找到ShortVideoParser实例，无法使用第三方API解析")
+                    logger.error("未初始化ShortVideoParser实例，无法使用第三方API解析")
                     raise e
             except Exception as backup_e:
                 logger.error(f"第三方API解析器也失败: {type(backup_e).__name__}: {str(backup_e)}")
