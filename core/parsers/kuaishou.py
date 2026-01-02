@@ -1,3 +1,4 @@
+import asyncio
 import re
 from random import choice
 from typing import ClassVar, TypeAlias
